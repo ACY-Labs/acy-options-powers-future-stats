@@ -20,7 +20,7 @@ export const OptionkPriceModel = sequelize.define('OptionPrice', {
         allowNull: false,
         primaryKey: true
     },
-    markPrice: {
+    price: {
         type: DataTypes.DOUBLE,
         allowNull: false
     }

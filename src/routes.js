@@ -48,7 +48,7 @@ function getCandles(prices,period='1m'){
     const candles = []
     const first = prices[prices.length-1]
     let prevTsGroup = Math.floor(first.timestamp / periodTime) * periodTime
-    let prevPrices = Number(first.markPrice)
+    let prevPrices = Number(first.price)
     let prevTs = first.timestamp
     let o = prevPrices
     let h = prevPrices
@@ -57,7 +57,7 @@ function getCandles(prices,period='1m'){
     let countPerInterval = 1;  // number of prices in current interval
     for (let i = prices.length-2; i >= 0; i--) {
         const ts = prices[i].timestamp;
-        const price = Number(prices[i].markPrice);
+        const price = Number(prices[i].price);
         //const [ts, price] = prices[i]
         const tsGroup = ts - (ts % periodTime)
 
@@ -110,7 +110,7 @@ async function fetchOptionPrice(){
         if (_data[i][0]=="option"){
             data.push({
                 symbol:_data[i][1],
-                markPrice:_data[i][35],
+                price:_data[i][35],
                 chainId:Number(chainId),
                 timestamp:timestamp
             })
@@ -128,7 +128,7 @@ export default function routes(app) {
         let period = req.query.period
         
         const prices = await OptionkPriceModel.findAll({
-            attributes: ["timestamp","markPrice"],
+            attributes: ["timestamp","price"],
             where: {
                 chainId: chainId,
                 symbol: symbol
