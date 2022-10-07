@@ -10,6 +10,8 @@ import App from './App';
 import { getLogger } from './helpers'
 import { sequelize } from './database.js';
 import { OptionkPriceModel } from './OptionPrice';
+import { ApolloClient, InMemoryCache, gql, HttpLink } from '@apollo/client'
+
 
 const assets = require(process.env.RAZZLE_ASSETS_MANIFEST);
 
@@ -121,6 +123,58 @@ async function fetchOptionPrice(){
     setTimeout(fetchOptionPrice,1000*60)
 }
 
+const apolloOptions = {
+    query: {
+      fetchPolicy: 'no-cache'
+    },
+    watchQuery: {
+      fetchPolicy: 'no-cache'
+    }
+  }
+const polygonGraphClient = new ApolloClient({
+    link: new HttpLink({ uri: 'https://api.thegraph.com/subgraphs/name/nearrainbow/acysubgraph', fetch }),
+    cache: new InMemoryCache(),
+    defaultOptions: apolloOptions
+})
+
+const tokenList = {
+    "BTC":"0x05d6f705C80d9F812d9bc1A142A655CDb25e2571",
+    "ETH":"0xeBC8428DC717D440d5deCE1547456B115b868F0e"
+}
+
+const tokenName2Addr = (token) => {
+    return tokenList[token]
+}
+
+async function fetchFuturePrice(chainId,symbol,start=0){
+    let tokenAddr = tokenName2Addr(symbol)
+    const entities = "chainlinkPrices"
+    const fragment = () => {
+        return `${entities}(
+        first: 1000
+        skip: ${start}
+        orderBy: timestamp
+        orderDirection: desc
+        where: {
+            token: "0x05d6f705C80d9F812d9bc1A142A655CDb25e2571"
+        }
+        ) { token,price:value,timestamp }\n`
+    }
+    
+    const queryString = `{
+        p0: ${fragment()}
+    }`
+    
+    const query = gql(queryString)
+    
+    const graphClient = polygonGraphClient
+    const { data } = await graphClient.query({query})
+    const prices = [
+        ...data.p0,
+    ]
+    return prices
+}
+
 export default function routes(app) {
     app.get('/api/option',async(req,res,next)=>{
         let symbol = req.query.symbol
@@ -141,6 +195,25 @@ export default function routes(app) {
         let data = getCandles(prices,period)
 
         res.send(data)
+    })
+
+    app.get('/api/futures',async(req,res,next)=>{
+        let symbol = req.query.symbol
+        let chainId = req.query.chainId
+        let period = req.query.period
+
+        let priceList = await fetchFuturePrice(chainId,symbol)   // get the first 1000 token
+        let n = 1000
+        let _newPriceList
+        do{                                     // get the remaining token
+            _newPriceList = await fetchFuturePrice(chainId,symbol,n)
+            priceList = priceList.concat(_newPriceList)
+            n += 1000
+        }while(_newPriceList.length!=0)
+
+        let candles = getCandles(priceList,period)
+
+        res.send(candles)
     })
 
 
