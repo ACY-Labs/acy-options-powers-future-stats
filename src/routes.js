@@ -11,6 +11,7 @@ import { getLogger } from './helpers'
 import { sequelize } from './database.js';
 import { OptionkPriceModel } from './OptionPrice';
 import { ApolloClient, InMemoryCache, gql, HttpLink } from '@apollo/client'
+import { Op } from 'sequelize';
 
 
 const assets = require(process.env.RAZZLE_ASSETS_MANIFEST);
@@ -146,8 +147,9 @@ const tokenName2Addr = (token) => {
     return tokenList[token]
 }
 
-async function fetchFuturePrice(chainId,symbol,start=0){
+async function fetchFuturePrice(chainId,symbol,start=0,from,to){
     let tokenAddr = tokenName2Addr(symbol)
+    logger.info(tokenAddr)
     const entities = "chainlinkPrices"
     const fragment = () => {
         return `${entities}(
@@ -156,7 +158,9 @@ async function fetchFuturePrice(chainId,symbol,start=0){
         orderBy: timestamp
         orderDirection: desc
         where: {
-            token: "0x05d6f705C80d9F812d9bc1A142A655CDb25e2571"
+            token: "${tokenAddr}",
+            timestamp_gte: ${from},
+            timestamp_lte: ${to}
         }
         ) { token,price:value,timestamp }\n`
     }
@@ -180,12 +184,15 @@ export default function routes(app) {
         let symbol = req.query.symbol
         let chainId = req.query.chainId
         let period = req.query.period
+        let from = req.query.from
+        let to = req.query.to
         
         const prices = await OptionkPriceModel.findAll({
             attributes: ["timestamp","price"],
             where: {
                 chainId: chainId,
-                symbol: symbol
+                symbol: symbol,
+                timestamp:{ [Op.between] : [from, to] }
             },
             order: [
                 ['timestamp',"DESC"]
@@ -201,19 +208,27 @@ export default function routes(app) {
         let symbol = req.query.symbol
         let chainId = req.query.chainId
         let period = req.query.period
+        let from = req.query.from
+        let to = req.query.to
 
-        let priceList = await fetchFuturePrice(chainId,symbol)   // get the first 1000 token
-        let n = 1000
-        let _newPriceList
-        do{                                     // get the remaining token
-            _newPriceList = await fetchFuturePrice(chainId,symbol,n)
-            priceList = priceList.concat(_newPriceList)
-            n += 1000
-        }while(_newPriceList.length!=0)
+        try{
+            let priceList = await fetchFuturePrice(chainId,symbol,0,from,to)   // get the first 1000 token
+            let n = 1000
+            let _newPriceList
+            do{                                     // get the remaining token
+                _newPriceList = await fetchFuturePrice(chainId,symbol,n,from,to)
+                priceList = priceList.concat(_newPriceList)
+                n += 1000
+            }while(_newPriceList.length!=0)
 
-        let candles = getCandles(priceList,period)
+            let candles = getCandles(priceList,period)
 
-        res.send(candles)
+            res.send(candles)
+        }catch(e){
+            next(e)
+            return
+        }
+        
     })
 
 
