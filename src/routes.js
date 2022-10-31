@@ -148,6 +148,17 @@ const tokenName2Addr = (token) => {
 }
 
 async function fetchFuturePrice(chainId,symbol,start=0,from,to){
+    let timestampOP = {}
+    if (from&&to){
+      timestampOP = `timestamp_gte: ${from},timestamp_lte: ${to}`
+    }else if(from){
+      timestampOP = `timestamp_gte: ${from}`
+    }else if(to){
+      timestampOP = `timestamp_lte: ${to}`
+    }else{
+      timestampOP = ``
+    }
+
     let tokenAddr = tokenName2Addr(symbol)
     logger.info(tokenAddr)
     const entities = "chainlinkPrices"
@@ -159,8 +170,7 @@ async function fetchFuturePrice(chainId,symbol,start=0,from,to){
         orderDirection: desc
         where: {
             token: "${tokenAddr}",
-            timestamp_gte: ${from},
-            timestamp_lte: ${to}
+            ${timestampOP}
         }
         ) { token,price:value,timestamp }\n`
     }
@@ -186,13 +196,24 @@ export default function routes(app) {
         let period = req.query.period
         let from = req.query.from
         let to = req.query.to
+
+        let timestampOP = {}
+        if (from&&to){
+          timestampOP = { [Op.between] : [from, to] }
+        }else if(from){
+          timestampOP = { [Op.gte] : [from] }
+        }else if(to){
+          timestampOP = { [Op.lte] : [to] }
+        }else{
+          timestampOP = { [Op.gte] : 0 }
+        }
         
         const prices = await OptionkPriceModel.findAll({
             attributes: ["timestamp","price"],
             where: {
                 chainId: chainId,
                 symbol: symbol,
-                timestamp:{ [Op.between] : [from, to] }
+                timestamp:timestampOP
             },
             order: [
                 ['timestamp',"DESC"]
