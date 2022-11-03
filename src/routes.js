@@ -105,23 +105,28 @@ async function fetchOptionPrice(){
 
     logger.debug("Fetching option data for chainId:%s, timestamp:%s",chainId,timestamp)
 
-    var web3 = new Web3(new Web3.providers.HttpProvider(httpProvider[chainId]))
-    var myContract = new web3.eth.Contract(readerABI,contracts[chainId]['reader'])
-    let _data = await myContract.methods.getSymbolsInfo(contracts[chainId]['pool'],[]).call().then((value)=>{return value})
-    let data = []
-    for(let i=0;i<_data.length;i++){
-        if (_data[i][0]=="option"){
-            data.push({
-                symbol:_data[i][1],
-                price:_data[i][35],
-                chainId:Number(chainId),
-                timestamp:timestamp
-            })
+    try{
+        var web3 = new Web3(new Web3.providers.HttpProvider(httpProvider[chainId]))
+        var myContract = new web3.eth.Contract(readerABI,contracts[chainId]['reader'])
+        let _data = await myContract.methods.getSymbolsInfo(contracts[chainId]['pool'],[]).call().then((value)=>{return value})
+        let data = []
+        for(let i=0;i<_data.length;i++){
+            if (_data[i][0]=="option"){
+                data.push({
+                    symbol:_data[i][1],
+                    price:_data[i][35],
+                    chainId:Number(chainId),
+                    timestamp:timestamp
+                })
+            }
         }
+        await OptionkPriceModel.bulkCreate(data, { ignoreDuplicates: true })
+        logger.info("Save %s option data in to database",data.length)
+        setTimeout(fetchOptionPrice,1000*60)
+    }catch(e){
+        logger.error(e)
+        setTimeout(fetchOptionPrice,1000)
     }
-    await OptionkPriceModel.bulkCreate(data, { ignoreDuplicates: true })
-    logger.info("Save %s option data in to database",data.length)
-    setTimeout(fetchOptionPrice,1000*60)
 }
 
 const apolloOptions = {
@@ -186,6 +191,9 @@ async function fetchFuturePrice(chainId,symbol,start=0,from,to){
     const prices = [
         ...data.p0,
     ]
+    for(let i=0;i<prices.length;i++){
+        prices[i].price = prices[i].price/1e8
+    }
     return prices
 }
 
