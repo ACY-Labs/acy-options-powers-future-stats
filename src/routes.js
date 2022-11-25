@@ -145,7 +145,9 @@ const polygonGraphClient = new ApolloClient({
 
 const tokenList = {
     "BTC":"0x05d6f705C80d9F812d9bc1A142A655CDb25e2571",
-    "ETH":"0xeBC8428DC717D440d5deCE1547456B115b868F0e"
+    "ETH":"0xeBC8428DC717D440d5deCE1547456B115b868F0e",
+    "USDC" : "0x7a96316B13bD7d0529e701d2ED8b9fC4E4fd8696",
+    "USDT" : "0x158653b66fd72555F68eDf983736781E471639Cc",
 }
 
 const tokenName2Addr = (token) => {
