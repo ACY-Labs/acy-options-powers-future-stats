@@ -250,12 +250,17 @@ export default function routes(app) {
                 _newPriceList = await fetchFuturePrice(chainId,symbol,n,from,to)
                 priceList = priceList.concat(_newPriceList)
                 n += 1000
-            }while(_newPriceList.length!=0)
-
-            let candles = getCandles(priceList,period)
-
-            res.send(candles)
+            }while(_newPriceList.length!=0&&n<6000)
+            
+            if (priceList.length!=0){
+                let candles = getCandles(priceList,period)
+                res.send(candles)
+            }else{
+                res.send([])
+            }
+            
         }catch(e){
+            logger.error(e)
             next(e)
             return
         }
@@ -304,13 +309,11 @@ export default function routes(app) {
         res.set('Content-Type', 'text/plain')
         const statusCode = Number(err.code) || 500
         let response = ''
-        if (IS_PRODUCTION) {
+        
         if (err.code === 400) {
             response = err.message
         }
-        } else {
-        response = err.stack
-        }
+        
         res.status(statusCode)
         res.send(response)
     })
