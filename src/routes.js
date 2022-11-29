@@ -230,6 +230,10 @@ export default function routes(app) {
             ]
         })
 
+        for(let i=0;i<prices.length;i++){
+            prices[i].price = prices[i].price/1e18
+        }
+
         let data = getCandles(prices,period)
 
         res.send(data)
