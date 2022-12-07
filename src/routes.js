@@ -138,7 +138,7 @@ const apolloOptions = {
     }
   }
 const polygonGraphClient = new ApolloClient({
-    link: new HttpLink({ uri: 'https://api.thegraph.com/subgraphs/name/nearrainbow/acysubgraph', fetch }),
+    link: new HttpLink({ uri: 'https://api.thegraph.com/subgraphs/id/QmQsoz9bnVhqVXMGNFrzLRrGRGCb7o7b34Zd4JiaV6pE7W', fetch }),
     cache: new InMemoryCache(),
     defaultOptions: apolloOptions
 })
@@ -166,8 +166,8 @@ async function fetchFuturePrice(chainId,symbol,start=0,from,to){
       timestampOP = ``
     }
 
-    let tokenAddr = tokenName2Addr(symbol)
-    logger.info(tokenAddr)
+    // let tokenAddr = tokenName2Addr(symbol)
+    // logger.info(tokenAddr)
     const entities = "chainlinkPrices"
     const fragment = () => {
         return `${entities}(
@@ -176,7 +176,7 @@ async function fetchFuturePrice(chainId,symbol,start=0,from,to){
         orderBy: timestamp
         orderDirection: desc
         where: {
-            token: "${tokenAddr}",
+            token: "${symbol}",
             ${timestampOP}
         }
         ) { token,price:value,timestamp }\n`
