@@ -27,5 +27,5 @@ export const contracts = {
 }
 
 export const httpProvider = {
-  80001: "https://polygontestapi.terminet.io/rpc",
+  80001: "https://rpc-mumbai.maticvigil.com",
 }
