@@ -70,10 +70,13 @@ function getCandles(prices,period='1m'){
         }
 
         if (prevTsGroup !== tsGroup) {
-            if (countPerInterval == 1) {
-                candles.push({ timestamp: prevTsGroup, o, h: h * 1.0003, l: l * 0.9996, c });
-            } else {
-                candles.push({ timestamp: prevTsGroup, o, h, l, c });
+            while(prevTsGroup!==tsGroup){
+                if (countPerInterval == 1) {
+                    candles.push({ timestamp: prevTsGroup, o, h: h * 1.0003, l: l * 0.9996, c });
+                } else {
+                    candles.push({ timestamp: prevTsGroup, o, h, l, c });
+                }
+                prevTsGroup += periodTime
             }
             countPerInterval = 0;
             o = c
