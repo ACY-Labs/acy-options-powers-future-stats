@@ -125,7 +125,7 @@ async function fetchOptionPrice(){
         setTimeout(fetchOptionPrice,1000*60)
     }catch(e){
         logger.error(e)
-        setTimeout(fetchOptionPrice,1000)
+        setTimeout(fetchOptionPrice,500)
     }
 }
 
@@ -138,7 +138,7 @@ const apolloOptions = {
     }
   }
 const polygonGraphClient = new ApolloClient({
-    link: new HttpLink({ uri: 'https://api.thegraph.com/subgraphs/id/QmQsoz9bnVhqVXMGNFrzLRrGRGCb7o7b34Zd4JiaV6pE7W', fetch }),
+    link: new HttpLink({ uri: 'https://api.thegraph.com/subgraphs/name/linja19/chainlink-price-mumbai', fetch }),
     cache: new InMemoryCache(),
     defaultOptions: apolloOptions
 })
