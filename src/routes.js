@@ -36,6 +36,12 @@ assets[entrypoint].js.map(asset=>
 ).join('') : '' : '';
 };
 
+function createHttpError(code, message) {
+    const error = new Error(message)
+    error.code = code
+    return error
+}
+
 const periodsMap = {
     '1m': 60 * 1,
     '5m': 60 * 5,
@@ -210,6 +216,11 @@ export default function routes(app) {
         let from = req.query.from
         let to = req.query.to
 
+        if (!period || !periodsMap[period]) {
+            next(createHttpError(400, `Invalid period. Valid periods are ${Object.keys(periodsMap)}`))
+            return
+        }
+
         let timestampOP = {}
         if (from&&to){
           timestampOP = { [Op.between] : [from, to] }
@@ -248,6 +259,11 @@ export default function routes(app) {
         let period = req.query.period
         let from = req.query.from
         let to = req.query.to
+
+        if (!period || !periodsMap[period]) {
+            next(createHttpError(400, `Invalid period. Valid periods are ${Object.keys(periodsMap)}`))
+            return
+        }
 
         try{
             let priceList = await fetchFuturePrice(chainId,symbol,0,from,to)   // get the first 1000 token
