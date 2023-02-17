@@ -12,6 +12,8 @@ import { sequelize } from './database.js';
 import { OptionkPriceModel } from './OptionPrice';
 import { ApolloClient, InMemoryCache, gql, HttpLink } from '@apollo/client'
 import { Op } from 'sequelize';
+import { ethers } from 'ethers';
+import axios from 'axios';
 
 
 const assets = require(process.env.RAZZLE_ASSETS_MANIFEST);
@@ -163,6 +165,53 @@ const tokenName2Addr = (token) => {
     return tokenList[token]
 }
 
+async function getVolData(){
+    let volData = await axios.get('https://sig.oraclum.io/unsigned?symbols=VOL-BTCUSD,VOL-ETHUSD')
+    .then(function (response) {
+        return response.data
+    })
+    .catch(function (error) {
+        console.log(error);
+        return {}
+    });
+    return volData
+}
+
+async function signVolData(volData){
+    let signatures = [];
+    let privateKey = process.env.SIGNER_PRIVATE_KEY
+    if (!privateKey){
+        return []
+    }
+    let wallet = new ethers.Wallet(privateKey);
+    Object.entries(volData).forEach(async ([key, value]) => {
+        let symbolId
+        value = "0.9"
+        if(key=="VOL-BTCUSD"){
+        symbolId = '0x21b5e575db5908f82bf406cb4dd9a5b6c4002f75e43e9a309d52ce4781fd0a4f'
+        }else{ //VOL-ETHUSD
+        symbolId = '0xd688cdd1e80f5af29b34377f1b82df91cbf6f697a25a9b3fd3eac5e52da25ed9'
+        }
+        let timestamp = Math.round(Date.now()/1000)
+        let messageHash = ethers.utils.solidityKeccak256(['bytes32','uint256','uint256'],[symbolId,timestamp,ethers.utils.parseUnits(value, 18)])
+        let messageHashBinary = ethers.utils.arrayify(messageHash)
+        let signature = await wallet.signMessage(messageHashBinary)
+        let r = signature.slice(0, 66)
+        let s = '0x' + signature.slice(66, 130)
+        let v = '0x' + signature.slice(130, 132)
+        signatures.push({
+        "oracleSymbolId": symbolId,
+        "timestamp": Math.round(Date.now()/1000),
+        "value": ethers.utils.parseUnits(value, 18),
+        "v": parseInt(v,16),
+        "r": r,
+        "s": s
+        })
+    });
+    // console.log("oracle signatures",signatures)
+    return signatures
+}
+
 async function fetchFuturePrice(chainId,symbol,start=0,from,to){
     let timestampOP = {}
     if (from&&to){
@@ -290,6 +339,16 @@ export default function routes(app) {
         
     })
 
+    app.get('/api/oracle-signatures',async(req,res,next)=>{
+        const unsigned = req.query.unsigned?req.query.unsigned:true
+        const volData = await getVolData()
+        if (unsigned==true){
+            res.send(volData)
+            return
+        }
+        const signatures = await signVolData(volData)
+        res.send(signatures)
+    })
 
     const cssAssetsTag = cssLinksFromAssets(assets, 'client')
     const jsAssetsTag = jsScriptTagsFromAssets(assets, 'client', ' defer crossorigin')
