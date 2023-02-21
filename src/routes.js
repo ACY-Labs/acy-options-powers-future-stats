@@ -17,7 +17,7 @@ import axios from 'axios';
 
 
 const assets = require(process.env.RAZZLE_ASSETS_MANIFEST);
-
+const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 sequelize.sync().then(() => {
     console.log("[INFO] Database is ready")
 });
@@ -43,6 +43,67 @@ function createHttpError(code, message) {
     error.code = code
     return error
 }
+
+class TtlCache {
+    constructor(ttl = 60, maxKeys) {
+      this._cache = {}
+      this._ttl = ttl
+      this._maxKeys = maxKeys
+      this._logger = getLogger('routes.TtlCache')
+    }
+  
+    get(key) {
+      this._logger.debug('get key %s', key)
+      return this._cache[key]
+    }
+  
+    set(key, value) {
+      this._cache[key] = value
+  
+      const keys = Object.keys(this._cache)
+      if (this._maxKeys && keys.length >= this._maxKeys) {
+        for (let i = 0; i <= keys.length - this._maxKeys; i++) {
+          this._logger.debug('delete key %s (max keys)', key)
+          delete this._cache[keys[i]]
+        }
+      }
+  
+      setTimeout(() => {
+        this._logger.debug('delete key %s (ttl)', key)
+        delete this._cache[key]
+      }, this._ttl * 1000)
+  
+      if (!IS_PRODUCTION) {
+        console.time('sizeof call')
+        const size = sizeof(this._cache) / 1024 / 1024
+        console.timeEnd('sizeof call')
+        this._logger.debug('TtlCache cache size %s MB', size)
+      }
+    }
+  
+    setAll(obj) {
+      this._cache = obj
+      
+      setTimeout(() => {
+        this._logger.debug('delete key (ttl)')
+        delete this._cache
+      }, this._ttl * 1000)
+  
+      if (!IS_PRODUCTION) {
+        console.time('sizeof call')
+        const size = sizeof(this._cache) / 1024 / 1024
+        console.timeEnd('sizeof call')
+        this._logger.debug('TtlCache cache size %s MB', size)
+      }
+    }
+
+    getAll(){
+        this._logger.debug('get cache')
+        return this._cache
+    }
+}
+
+const ttlCache = new TtlCache(60, 100)
 
 const periodsMap = {
     '1m': 60 * 1,
@@ -257,6 +318,104 @@ async function fetchFuturePrice(chainId,symbol,start=0,from,to){
     return prices
 }
 
+function getTimestamp0000(timestamp){
+    let date = new Date(timestamp*1000)
+    date.setUTCHours(0,0,0,0)
+    return date.getTime()/1000
+}
+
+function getTimeNow(){
+    const now = Math.floor(Math.floor(Date.now()/1000)/60)*60
+    // logger.info(now)
+    return now
+}
+
+async function getOptionMarketOverview(chainId=80001,time){
+    const optionSymbol = ["BTCUSD-60000-C","BTCUSD-10000-C"]
+    let result = []
+    for (let i=0;i<optionSymbol.length;i++){
+        const symbol = optionSymbol[i]
+        const closePrice = await OptionkPriceModel.findOne({
+            attributes: ["timestamp","price"],
+            where: {
+                chainId: chainId,
+                symbol: symbol,
+                timestamp:{ [Op.lte] : [time] }
+            },
+            order: [
+                ['timestamp',"DESC"]
+            ]
+        })
+        const latestPrice = await OptionkPriceModel.findOne({
+            attributes: ["timestamp","price"],
+            where: {
+                chainId: chainId,
+                symbol: symbol,
+            },
+            order: [
+                ['timestamp',"DESC"]
+            ]
+        })
+        const highestPrice = await OptionkPriceModel.findOne({
+            attributes: ["timestamp","price"],
+            where: {
+                chainId: chainId,
+                symbol: symbol,
+                timestamp:{ [Op.gt] : [time] }
+            },
+            order: [
+                ['price',"DESC"]
+            ]
+        })
+        const lowestPrice = await OptionkPriceModel.findOne({
+            attributes: ["timestamp","price"],
+            where: {
+                chainId: chainId,
+                symbol: symbol,
+                timestamp:{ [Op.gt] : [time] }
+            },
+            order: [
+                ['price',"ASC"]
+            ]
+        })
+        const priceVariation = latestPrice.price/closePrice.price - 1
+        result.push({
+            latestPrice:latestPrice.price,
+            highestPrice:highestPrice.price,
+            lowestPrice:lowestPrice.price,
+            priceVariation,
+            symbol:symbol,
+            txCount:0,
+        })
+    }
+    
+    return result
+}
+
+async function getFutureMarketOverview(chainId=80001,time){
+    const futureSymbol = ["BTC","ETH","LINK","WMATIC","EUR","DAI","USDC","USDT","SAND"]
+    let result = []
+    for (let i=0;i<futureSymbol.length;i++){
+        const symbol = futureSymbol[i]
+        const prices = await fetchFuturePrice(chainId,symbol,0,time)
+        const pricesSorted = prices.sort((a,b)=>a.price-b.price)
+        const closePrice = prices[prices.length-1]
+        const latestPrice = prices[0]
+        const highestPrice = pricesSorted[pricesSorted.length-1]
+        const lowestPrice = pricesSorted[0]
+        const priceVariation = latestPrice.price/closePrice.price - 1
+        result.push({
+            latestPrice:latestPrice.price,
+            priceVariation,
+            highestPrice:highestPrice.price,
+            lowestPrice:lowestPrice.price,
+            symbol:symbol,
+            txCount:0
+        })
+    }
+    return result
+}
+
 export default function routes(app) {
     app.get('/api/option',async(req,res,next)=>{
         let symbol = req.query.symbol
@@ -337,6 +496,29 @@ export default function routes(app) {
             return
         }
         
+    })
+
+    app.get('/api/market-overview',async(req,res,next)=>{
+        let chainId = req.query.chainId
+        let time = getTimestamp0000(getTimeNow())
+
+        const fromCache = ttlCache.getAll()
+        if(Object.keys(fromCache).length === 0){
+            const optionMarket = await getOptionMarketOverview(chainId,time)
+            const futureMarket = await getFutureMarketOverview(chainId,time)
+            // const powerMarket = getPowerMarketOverview(chainId,time)
+            const marketOverview = {
+                optionMarket,
+                futureMarket,
+                // powerMarket
+            }
+            ttlCache.setAll(marketOverview)
+            res.send(marketOverview)
+        }else{
+            res.send(fromCache)
+        }
+        
+        // res.send(time)
     })
 
     app.get('/api/oracle-signatures',async(req,res,next)=>{
