@@ -50,6 +50,7 @@ class TtlCache {
       this._ttl = ttl
       this._maxKeys = maxKeys
       this._logger = getLogger('routes.TtlCache')
+      this._isNull = true
     }
   
     get(key) {
@@ -59,7 +60,6 @@ class TtlCache {
   
     set(key, value) {
       this._cache[key] = value
-  
       const keys = Object.keys(this._cache)
       if (this._maxKeys && keys.length >= this._maxKeys) {
         for (let i = 0; i <= keys.length - this._maxKeys; i++) {
@@ -83,10 +83,11 @@ class TtlCache {
   
     setAll(obj) {
       this._cache = obj
-      
+      this._isNull = false
       setTimeout(() => {
         this._logger.debug('delete key (ttl)')
         delete this._cache
+        this._isNull = true
       }, this._ttl * 1000)
   
       if (!IS_PRODUCTION) {
@@ -99,6 +100,7 @@ class TtlCache {
 
     getAll(){
         this._logger.debug('get cache')
+        if (this._isNull) return {}
         return this._cache
     }
 }
