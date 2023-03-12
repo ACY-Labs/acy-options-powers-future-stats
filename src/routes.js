@@ -228,6 +228,16 @@ const tokenName2Addr = (token) => {
     return tokenList[token]
 }
 
+const symbolList = {
+    "BTC": "0x7404e3d104ea7841c3d9e6fd20adfe99b4ad586bc08d8f3bd3afef894cf184de",
+    "BTCUSD-60000-C": "0xe9b612d2fb33b25dc2c84c34cbe40acd3115a0148690309ef793ccdfaa382c38",
+    "BTCUSD-10000-C": "0x2c35070bb266919babd70f9650f09196d06afab644c1717a68bb81bc25a11bb7"
+}
+
+const symbolName2Id = (symbol) => {
+    return symbolList[symbol]
+}
+
 async function getVolData(){
     let volData = await axios.get('https://sig.oraclum.io/unsigned?symbols=VOL-BTCUSD,VOL-ETHUSD')
     .then(function (response) {
@@ -381,13 +391,17 @@ async function getOptionMarketOverview(chainId=80001,time){
             ]
         })
         const priceVariation = latestPrice.price/closePrice.price - 1
+        const marketData = await getSymbolMarket(chainId,symbol,time)
+        const txCount = marketData?marketData.txCount:0
+        const volume = marketData?marketData.volume:0
         result.push({
-            latestPrice:latestPrice.price,
-            highestPrice:highestPrice.price,
-            lowestPrice:lowestPrice.price,
+            latestPrice:latestPrice.price/1e18,
+            highestPrice:highestPrice.price/1e18,
+            lowestPrice:lowestPrice.price/1e18,
             priceVariation,
             symbol:symbol,
-            txCount:0,
+            txCount,
+            volume:volume/1e18
         })
     }
     
@@ -406,16 +420,48 @@ async function getFutureMarketOverview(chainId=80001,time){
         const highestPrice = pricesSorted[pricesSorted.length-1]
         const lowestPrice = pricesSorted[0]
         const priceVariation = latestPrice.price/closePrice.price - 1
+        const marketData = await getSymbolMarket(chainId,symbol,time)
+        const txCount = marketData?marketData.txCount:0
+        const volume = marketData?marketData.volume:0
         result.push({
             latestPrice:latestPrice.price,
             priceVariation,
             highestPrice:highestPrice.price,
             lowestPrice:lowestPrice.price,
             symbol:symbol,
-            txCount:0
+            txCount,
+            volume:volume/1e18,
         })
     }
     return result
+}
+
+async function getSymbolMarket(chainId=80001,symbol,time){
+    const entities = "symbolDayDatas"
+    const date = time / 86400
+    const symbolId = symbolName2Id(symbol)
+    if(!symbolId){
+        return null
+    }
+    const fragment = () => {
+        return `${entities}(
+        where: {
+            symbolId: "${symbolId}",
+            date: ${date}
+        }
+        ) { txCount,volume }\n`
+    }
+    
+    const queryString = `{
+        p0: ${fragment()}
+    }`
+    
+    const query = gql(queryString)
+    
+    const graphClient = polygonGraphClient
+    const { data } = await graphClient.query({query})
+    // console.log("data",data)
+    return data.p0[0]
 }
 
 export default function routes(app) {
@@ -502,7 +548,7 @@ export default function routes(app) {
 
     app.get('/api/market-overview',async(req,res,next)=>{
         let chainId = req.query.chainId
-        let time = getTimestamp0000(getTimeNow())
+        let time = req.query.time?req.query.time:getTimestamp0000(getTimeNow())
 
         const fromCache = ttlCache.getAll()
         if(Object.keys(fromCache).length === 0){
