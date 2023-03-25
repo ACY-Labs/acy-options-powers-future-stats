@@ -106,6 +106,7 @@ class TtlCache {
 }
 
 const ttlCache = new TtlCache(60, 100)
+const allSymbol = new TtlCache(120, 100)
 
 const periodsMap = {
     '1m': 60 * 1,
@@ -342,12 +343,12 @@ function getTimeNow(){
     return now
 }
 
-async function getOptionMarketOverview(chainId=80001,time){
-    const optionSymbol = ["BTCUSD-60000-C","BTCUSD-10000-C"]
+async function getOptionMarketOverview(chainId=80001,time,optionSymbol){
+
     let result = []
     for (let i=0;i<optionSymbol.length;i++){
         const symbol = optionSymbol[i]
-        const closePrice = await OptionkPriceModel.findOne({
+        let closePrice = await OptionkPriceModel.findOne({
             attributes: ["timestamp","price"],
             where: {
                 chainId: chainId,
@@ -358,6 +359,19 @@ async function getOptionMarketOverview(chainId=80001,time){
                 ['timestamp',"DESC"]
             ]
         })
+        if (!closePrice){
+            closePrice = await OptionkPriceModel.findOne({
+                attributes: ["timestamp","price"],
+                where: {
+                    chainId: chainId,
+                    symbol: symbol,
+                    timestamp:{ [Op.gte] : [time] }
+                },
+                order: [
+                    ['timestamp',"ASC"]
+                ]
+            })
+        }
         const latestPrice = await OptionkPriceModel.findOne({
             attributes: ["timestamp","price"],
             where: {
@@ -408,8 +422,7 @@ async function getOptionMarketOverview(chainId=80001,time){
     return result
 }
 
-async function getFutureMarketOverview(chainId=80001,time){
-    const futureSymbol = ["BTC","ETH","LINK","WMATIC","EUR","DAI","USDC","USDT","SAND"]
+async function getFutureMarketOverview(chainId=80001,time,futureSymbol){
     let result = []
     for (let i=0;i<futureSymbol.length;i++){
         const symbol = futureSymbol[i]
@@ -439,10 +452,7 @@ async function getFutureMarketOverview(chainId=80001,time){
 async function getSymbolMarket(chainId=80001,symbol,time){
     const entities = "symbolDayDatas"
     const date = time / 86400
-    const symbolId = symbolName2Id(symbol)
-    if(!symbolId){
-        return null
-    }
+    const symbolId = ethers.utils.solidityKeccak256(['string'],[symbol])
     const fragment = () => {
         return `${entities}(
         where: {
@@ -460,8 +470,33 @@ async function getSymbolMarket(chainId=80001,symbol,time){
     
     const graphClient = polygonGraphClient
     const { data } = await graphClient.query({query})
-    // console.log("data",data)
+    if (Object.keys(data.p0).length === 0){
+        return null
+    }
     return data.p0[0]
+}
+
+async function getAllSymbol(){
+    let chainId = '80001'
+    try{
+        var web3 = new Web3(new Web3.providers.HttpProvider(httpProvider[chainId]))
+        var myContract = new web3.eth.Contract(readerABI,contracts[chainId]['reader'])
+        let _data = await myContract.methods.getSymbolsInfo(contracts[chainId]['pool'],[]).call().then((value)=>{return value})
+        let data = {'option':[],'futures':[],'power':[]}
+        for(let i=0;i<_data.length;i++){
+            if (_data[i].category=="option"){
+                data['option'].push(_data[i].symbol)
+            }else if(_data[i].category=="futures"){
+                data['futures'].push(_data[i].symbol)
+            }else if(_data[i].category=="power"){
+                data['power'].push(_data[i].symbol)
+            }
+        }
+        allSymbol.setAll(data)
+    }catch(e){
+        logger.error(e)
+        setTimeout(getAllSymbol,500)
+    }
 }
 
 export default function routes(app) {
@@ -499,6 +534,11 @@ export default function routes(app) {
                 ['timestamp',"DESC"]
             ]
         })
+
+        if (prices.length==0){
+            res.send([])
+            return
+        }
 
         for(let i=0;i<prices.length;i++){
             prices[i].price = prices[i].price/1e18
@@ -552,8 +592,14 @@ export default function routes(app) {
 
         const fromCache = ttlCache.getAll()
         if(Object.keys(fromCache).length === 0){
-            const optionMarket = await getOptionMarketOverview(chainId,time)
-            const futureMarket = await getFutureMarketOverview(chainId,time)
+            let _allSymbol = allSymbol.getAll()
+            if(Object.keys(_allSymbol).length === 0){
+                logger.info("Fetching all symbol from reader contract")
+                await getAllSymbol()
+                _allSymbol = allSymbol.getAll()
+            }
+            const optionMarket = await getOptionMarketOverview(chainId,time,_allSymbol['option'])
+            const futureMarket = await getFutureMarketOverview(chainId,time,_allSymbol['futures'])
             // const powerMarket = getPowerMarketOverview(chainId,time)
             const marketOverview = {
                 optionMarket,
