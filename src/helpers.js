@@ -21,8 +21,8 @@ export function getLogger(ns) {
 
 export const contracts = {
   80001: {
-    pool: '0x285dc02bC51f2fabCE08F9625B44802019583286',
-    reader: "0xb4C9d67c91D7c6ded1A8e92912D2FD71b48167b5",
+    pool: '0x5C842b8E75D4fC8C63f2F889d7f067aa72b8C65C',
+    reader: "0x99E4B9F0664c700F871C53630572B08D74a6f5B5",
   },
 }
 
