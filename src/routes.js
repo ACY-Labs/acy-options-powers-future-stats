@@ -186,10 +186,17 @@ async function fetchOptionPrice(){
         let _data = await myContract.methods.getSymbolsInfo(contracts[chainId]['pool'],[]).call().then((value)=>{return value})
         let data = []
         for(let i=0;i<_data.length;i++){
-            if (_data[i][0]=="option"){
+            if (_data[i].category=="option"){
                 data.push({
-                    symbol:_data[i][1],
-                    price:_data[i][35],
+                    symbol:_data[i].symbol,
+                    price:_data[i].markPrice,
+                    chainId:Number(chainId),
+                    timestamp:timestamp
+                })
+            }else if(_data[i].category=="power"){
+                data.push({
+                    symbol:_data[i].symbol,
+                    price:_data[i].markPrice,
                     chainId:Number(chainId),
                     timestamp:timestamp
                 })
@@ -549,6 +556,55 @@ export default function routes(app) {
         res.send(data)
     })
 
+    app.get('/api/power',async(req,res,next)=>{
+        let symbol = req.query.symbol
+        let chainId = req.query.chainId
+        let period = req.query.period
+        let from = req.query.from
+        let to = req.query.to
+
+        if (!period || !periodsMap[period]) {
+            next(createHttpError(400, `Invalid period. Valid periods are ${Object.keys(periodsMap)}`))
+            return
+        }
+
+        let timestampOP = {}
+        if (from&&to){
+          timestampOP = { [Op.between] : [from, to] }
+        }else if(from){
+          timestampOP = { [Op.gte] : [from] }
+        }else if(to){
+          timestampOP = { [Op.lte] : [to] }
+        }else{
+          timestampOP = { [Op.gte] : 0 }
+        }
+        
+        const prices = await OptionkPriceModel.findAll({
+            attributes: ["timestamp","price"],
+            where: {
+                chainId: chainId,
+                symbol: symbol,
+                timestamp:timestampOP
+            },
+            order: [
+                ['timestamp',"DESC"]
+            ]
+        })
+
+        if (prices.length==0){
+            res.send([])
+            return
+        }
+
+        for(let i=0;i<prices.length;i++){
+            prices[i].price = prices[i].price/1e18
+        }
+
+        let data = getCandles(prices,period)
+
+        res.send(data)
+    })
+
     app.get('/api/futures',async(req,res,next)=>{
         let symbol = req.query.symbol
         let chainId = req.query.chainId
@@ -599,12 +655,13 @@ export default function routes(app) {
                 _allSymbol = allSymbol.getAll()
             }
             const optionMarket = await getOptionMarketOverview(chainId,time,_allSymbol['option'])
+            const powerMarket = await getOptionMarketOverview(chainId,time,_allSymbol['power'])
             const futureMarket = await getFutureMarketOverview(chainId,time,_allSymbol['futures'])
             // const powerMarket = getPowerMarketOverview(chainId,time)
             const marketOverview = {
                 optionMarket,
                 futureMarket,
-                // powerMarket
+                powerMarket
             }
             ttlCache.setAll(marketOverview)
             res.send(marketOverview)
